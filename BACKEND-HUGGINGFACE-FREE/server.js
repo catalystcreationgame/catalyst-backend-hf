@@ -199,7 +199,7 @@ app.post('/api/test', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0') => {
   console.log(`\n🚀 Catalyst Backend with Hugging Face`);
   console.log(`   Port: ${PORT}`);
   console.log(`   Hugging Face API: ${HF_API_KEY ? 'Configured ✓' : 'Missing ✗'}`);
