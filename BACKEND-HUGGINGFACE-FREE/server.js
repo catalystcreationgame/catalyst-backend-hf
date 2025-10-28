@@ -198,6 +198,7 @@ app.post('/api/test', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+const HOST = '0.0.0.0';
 app.listen(PORT, () => {
   console.log(`\n🚀 Catalyst Backend with Hugging Face`);
   console.log(`   Port: ${PORT}`);
