@@ -12,14 +12,14 @@ const HF_API_KEY = process.env.HUGGINGFACE_API_KEY;
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
-    message: 'Catalyst Backend with Hugging Face - FIXED VERSION',
+    message: 'Catalyst Backend - FINAL FIXED VERSION v2',
     hfConfigured: !!HF_API_KEY
   });
 });
 
 // Generate image with Stable Diffusion XL
 async function generateImage(prompt) {
-  console.log('Calling Hugging Face Stable Diffusion XL...');
+  console.log('Calling Stable Diffusion XL...');
 
   const response = await fetch(
     'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0',
@@ -41,20 +41,23 @@ async function generateImage(prompt) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Hugging Face error: ${response.status} - ${errorText}`);
+    throw new Error(`Image generation failed: ${response.status} - ${errorText}`);
   }
 
   const imageBuffer = await response.arrayBuffer();
   const base64 = Buffer.from(imageBuffer).toString('base64');
 
+  console.log(`✅ Image generated: ${base64.length} characters`);
   return base64;
 }
 
-// Evaluate lab item with CLIP - FIXED VERSION
+// FIXED: Evaluate with CLIP using proper format
 async function evaluateWithCLIP(imageBase64, labItem) {
   console.log('Evaluating with CLIP...');
 
-  // CLIP expects the image as base64 string, not a URL
+  // CRITICAL FIX: Send the image as a data URL in the correct format
+  const imageDataUrl = `data:image/jpeg;base64,${imageBase64}`;
+
   const response = await fetch(
     'https://api-inference.huggingface.co/models/openai/clip-vit-large-patch14',
     {
@@ -64,9 +67,7 @@ async function evaluateWithCLIP(imageBase64, labItem) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        inputs: {
-          image: imageBase64  // Send base64 directly
-        },
+        inputs: imageDataUrl,  // Send as data URL
         parameters: {
           candidate_labels: [
             `a laboratory ${labItem}`,
@@ -81,19 +82,19 @@ async function evaluateWithCLIP(imageBase64, labItem) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.log('CLIP error response:', errorText);
+    console.error('CLIP error:', errorText);
     throw new Error(`CLIP evaluation failed: ${response.status}`);
   }
 
   const result = await response.json();
-  console.log('CLIP result:', JSON.stringify(result).substring(0, 200));
+  console.log('CLIP result received:', JSON.stringify(result).substring(0, 100));
 
-  // Parse CLIP response (it returns array of label scores)
+  // Parse CLIP response
   let score = 0;
   let explanation = '';
 
   if (Array.isArray(result) && result.length > 0) {
-    // CLIP returns scores for each label
+    // CLIP returns array of {label, score} objects
     const labItemScore = result[0]?.score || 0;
     const unrelatedScore = result[3]?.score || 0;
 
@@ -108,15 +109,16 @@ async function evaluateWithCLIP(imageBase64, labItem) {
       explanation = `The ${labItem} is not clearly visible or present in the image (confidence: ${Math.round(labItemScore * 100)}%). The image may be more artistic or abstract rather than showing realistic laboratory equipment.`;
     }
   } else {
-    // Fallback if CLIP response format is unexpected
+    // Fallback
     score = 50;
     explanation = `AI evaluation completed with moderate confidence. The ${labItem} may be present but results are inconclusive.`;
   }
 
+  console.log(`✅ Evaluation complete: ${score}%`);
   return { score, explanation };
 }
 
-// Main endpoint - FIXED VERSION
+// Main endpoint
 app.post('/api/generate-and-evaluate', async (req, res) => {
   try {
     const { prompt, labItem, teamName } = req.body;
@@ -128,28 +130,28 @@ app.post('/api/generate-and-evaluate', async (req, res) => {
       });
     }
 
-    console.log(`\n[${new Date().toISOString()}] Processing request for ${teamName}`);
+    console.log(`\n[${new Date().toISOString()}] Processing: ${teamName}`);
     console.log(`Prompt: ${prompt}`);
     console.log(`Lab Item: ${labItem}`);
 
-    // Step 1: Generate image with Stable Diffusion XL
+    // Step 1: Generate image
     console.log('Step 1/2: Generating image...');
     const imageBase64 = await generateImage(prompt);
-    console.log(`Image generated: ${imageBase64.length} bytes`);
 
-    // Create data URL for the image
+    // Create data URL for frontend
     const imageUrl = `data:image/png;base64,${imageBase64}`;
-    console.log('Image URL created (data URL)');
 
     // Step 2: Evaluate with CLIP
-    console.log('Step 2/2: Evaluating lab item accuracy...');
+    console.log('Step 2/2: Evaluating with CLIP...');
     const evaluation = await evaluateWithCLIP(imageBase64, labItem);
+
+    console.log(`\n✅ SUCCESS for ${teamName}!`);
     console.log(`Score: ${evaluation.score}%`);
-    console.log(`Explanation: ${evaluation.explanation}`);
+    console.log(`Explanation: ${evaluation.explanation.substring(0, 80)}...\n`);
 
     res.json({
       success: true,
-      imageUrl: imageUrl,  // Return as data URL
+      imageUrl: imageUrl,
       score: evaluation.score,
       explanation: evaluation.explanation,
       teamName: teamName,
@@ -158,7 +160,7 @@ app.post('/api/generate-and-evaluate', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error:', error);
+    console.error('\n❌ ERROR:', error.message);
     res.status(500).json({
       success: false,
       error: error.message || 'An error occurred'
@@ -167,6 +169,10 @@ app.post('/api/generate-and-evaluate', async (req, res) => {
 });
 
 // Test endpoint
+app.get('/', (req, res) => {
+  res.send('Catalyst Backend is running! Visit /health for status.');
+});
+
 app.post('/api/test', (req, res) => {
   console.log('Test request:', req.body);
   res.json({ 
@@ -177,16 +183,16 @@ app.post('/api/test', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-const HOST = '0.0.0.0';  // Required for Render
+const HOST = '0.0.0.0';
 app.listen(PORT, HOST, () => {
-  console.log(`\n🚀 Catalyst Backend - FIXED VERSION`);
+  console.log(`\n🚀 Catalyst Backend - FINAL FIXED VERSION v2`);
   console.log(`   Port: ${PORT}`);
   console.log(`   Host: ${HOST}`);
   console.log(`   Hugging Face API: ${HF_API_KEY ? 'Configured ✓' : 'Missing ✗'}`);
   console.log(`\n   Models:`);
   console.log(`   - Image Generation: Stable Diffusion XL`);
   console.log(`   - Evaluation: CLIP (Vision-Language Model)`);
-  console.log(`\n   ✅ Fixed: CLIP evaluation now works without Cloudinary`);
-  console.log(`   ✅ Images returned as data URLs (base64)`);
+  console.log(`\n   ✅ FIXED: CLIP now receives proper data URL format`);
+  console.log(`   ✅ Images returned as base64 data URLs`);
   console.log(`\n   Ready to generate images! 🎨\n`);
 });
